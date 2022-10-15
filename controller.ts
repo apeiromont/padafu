@@ -1,11 +1,12 @@
 import { Context, RouterContext } from "https://deno.land/x/oak@v11.1.0/mod.ts";
 import puppeteer, {
   Browser,
+  Page,
   PaperFormat,
 } from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
 import { readAll } from "https://deno.land/std@0.159.0/streams/conversion.ts";
 import { readerFromStreamReader } from "https://deno.land/std@0.93.0/io/streams.ts";
-import { PDFDocument } from "https://esm.sh/pdf-lib";
+import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 
 async function withPdfMetadata(
   original: Uint8Array,
@@ -66,6 +67,7 @@ export interface PDFMetadata {
 
 export interface RenderPdfRequest {
   html: string;
+  css?: string;
   pageSize?: PaperFormat;
   filename?: string;
   margin?: string;
@@ -88,6 +90,10 @@ async function renderPdf(req: RenderPdfRequest): Promise<[number, Uint8Array]> {
     await page.setContent(req.html, {
       waitUntil: "domcontentloaded",
     });
+
+    if (req.css) {
+      await attachCssToPage(page, req.css);
+    }
 
     const footerTemplate = `<div
     id="footer-template"
@@ -136,6 +142,7 @@ export async function apiRenderPdf(ctx: Context) {
   const { value } = ctx.request.body({ type: "json" });
   const {
     html,
+    css,
     pageSize = "letter",
     filename = "rendered",
     margin = "0.4in",
@@ -153,6 +160,7 @@ export async function apiRenderPdf(ctx: Context) {
     const [duration, result] = await withExecutionTime(() =>
       renderPdf({
         html,
+        css,
         pageSize,
         filename,
         margin,
@@ -192,4 +200,15 @@ function transmitBilling(
     pageCount,
     pdfBytesLength,
   });
+}
+
+async function attachCssToPage(page: Page, css: string) {
+  await page.evaluate(css => {
+    // eslint-disable-next-line no-undef
+    var style = document.createElement("style");
+    style.type = "text/css";
+    style.innerHTML = css;
+    // eslint-disable-next-line no-undef
+    document.getElementsByTagName("head")[0].appendChild(style);
+  }, css);
 }
